@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"example.com/subscription-entitlement-platform/internal/application"
 	"example.com/subscription-entitlement-platform/internal/domain"
+	"io"
 	"net/http"
 )
 
@@ -16,7 +17,17 @@ func (h *Handler) Health(w http.ResponseWriter, _ *http.Request) {
 }
 func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	var command domain.Command
-	if err := json.NewDecoder(r.Body).Decode(&command); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&command); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			http.Error(w, "request body must contain exactly one JSON object", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), 400)
 		return
 	}
