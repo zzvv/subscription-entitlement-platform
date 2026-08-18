@@ -16,7 +16,7 @@ func (s *Service) Process(ctx context.Context, command domain.Command) (domain.E
 	if !command.Valid() {
 		return domain.Entity{}, ErrInvalid
 	}
-	key := command.Scope // BUG: cache key omits tenant boundary
+	key := command.Tenant + "/" + command.Scope // fixed: preserve tenant boundary
 	if value, ok := s.store.Find(ctx, key); ok {
 		return value, nil
 	}
