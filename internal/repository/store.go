@@ -27,6 +27,9 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.values[key] = value
 	return nil
 }
