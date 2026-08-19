@@ -23,6 +23,10 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return s.commitReceiptLocked(key, value, receipt)
+}
+
+func (s *Store) commitReceiptLocked(key string, value domain.Entity, receipt domain.Receipt) error {
 	if s.receiptCommitErr != nil {
 		return s.receiptCommitErr
 	}
