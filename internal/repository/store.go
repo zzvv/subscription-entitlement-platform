@@ -12,15 +12,35 @@ type Store struct {
 }
 
 func NewStore() *Store { return &Store{values: map[string]domain.Entity{}} }
-func (s *Store) Find(_ context.Context, key string) (domain.Entity, bool) {
+func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	value, ok := s.values[key]
 	return value, ok
 }
-func (s *Store) Save(_ context.Context, key string, value domain.Entity) error {
+func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.values[key] = value
 	return nil
+}
+
+// LoadOrStore atomically returns the existing value or stores value when key is absent.
+func (s *Store) LoadOrStore(ctx context.Context, key string, value domain.Entity) (domain.Entity, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.values[key]; ok {
+		return existing, true, nil
+	}
+	s.values[key] = value
+	return value, false, nil
 }

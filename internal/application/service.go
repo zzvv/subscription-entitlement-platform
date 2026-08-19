@@ -16,14 +16,12 @@ func (s *Service) Process(ctx context.Context, command domain.Command) (domain.E
 	if !command.Valid() {
 		return domain.Entity{}, ErrInvalid
 	}
-	key := command.Scope // BUG: cache key omits tenant boundary
-	if value, ok := s.store.Find(ctx, key); ok {
-		return value, nil
-	}
+	key := command.Tenant + "/" + command.Scope
 	value := domain.NewEntity(command.ID, command.Tenant, command.Scope)
 	value.Plan = command.Plan
-	if err := s.store.Save(ctx, key, value); err != nil {
+	stored, _, err := s.store.LoadOrStore(ctx, key, value)
+	if err != nil {
 		return domain.Entity{}, err
 	}
-	return value, nil
+	return stored, nil
 }
