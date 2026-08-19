@@ -98,3 +98,108 @@ func TestConcurrentConfirmationsKeepOneSubscriptionStateAndReceipt(t *testing.T)
 		t.Fatalf("expected one notification receipt for one subscription, got %d", got)
 	}
 }
+
+func TestConcurrentConfirmationsReturnSameSubscriptionState(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	store.SetCommitBeforeLockForTest(func() {
+		entered <- struct{}{}
+		<-release
+	})
+
+	commands := []domain.Command{
+		domain.NewCommand("sub-a", "tenant-a", "standard", "activate"),
+		domain.NewCommand("sub-b", "tenant-a", "standard", "activate"),
+	}
+	type outcome struct {
+		entity domain.Entity
+		err    error
+	}
+	results := make(chan outcome, len(commands))
+	for _, command := range commands {
+		go func(command domain.Command) {
+			entity, err := service.Confirm(context.Background(), command)
+			results <- outcome{entity: entity, err: err}
+		}(command)
+	}
+	<-entered
+	<-entered
+	close(release)
+
+	outcomes := make([]outcome, 0, len(commands))
+	for range commands {
+		got := <-results
+		if got.err != nil {
+			t.Fatalf("concurrent confirmation failed: %v", got.err)
+		}
+		outcomes = append(outcomes, got)
+	}
+	// Concurrent confirmations of the same tenant/scope must collapse onto a single
+	// committed subscription state, regardless of which operator's command landed first.
+	authoritative, ok := store.Find(context.Background(), "tenant-a/standard")
+	if !ok {
+		t.Fatal("concurrent confirmation must leave subscription state")
+	}
+	for i, got := range outcomes {
+		if got.entity != authoritative {
+			t.Fatalf("operator %d returned %+v, expected the single committed state %+v", i, got.entity, authoritative)
+		}
+	}
+	if got := store.ReceiptCountForTest(); got != 1 {
+		t.Fatalf("expected one notification receipt for one subscription, got %d", got)
+	}
+}
+
+func TestRepeatedConfirmationIsIdempotent(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+	command := domain.NewCommand("sub-a", "tenant-a", "standard", "activate")
+
+	first, err := service.Confirm(context.Background(), command)
+	if err != nil {
+		t.Fatalf("first confirmation: %v", err)
+	}
+	second, err := service.Confirm(context.Background(), command)
+	if err != nil {
+		t.Fatalf("idempotent reconfirmation: %v", err)
+	}
+	if second != first {
+		t.Fatalf("reconfirmation must return the same committed state: first=%+v second=%+v", first, second)
+	}
+	if got := store.ReceiptCountForTest(); got != 1 {
+		t.Fatalf("idempotent reconfirmation must not enqueue another receipt, got %d", got)
+	}
+}
+
+func TestConfirmationIdempotencyDoesNotBleedAcrossTenantsOrScopes(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+
+	if _, err := service.Confirm(context.Background(), domain.NewCommand("sub-a", "tenant-a", "standard", "activate")); err != nil {
+		t.Fatalf("confirm tenant-a/standard: %v", err)
+	}
+	if _, err := service.Confirm(context.Background(), domain.NewCommand("sub-b", "tenant-b", "standard", "activate")); err != nil {
+		t.Fatalf("confirm tenant-b/standard: %v", err)
+	}
+	if _, err := service.Confirm(context.Background(), domain.NewCommand("sub-c", "tenant-a", "premium", "activate")); err != nil {
+		t.Fatalf("confirm tenant-a/premium: %v", err)
+	}
+
+	tenantAStandard, ok := store.Find(context.Background(), "tenant-a/standard")
+	if !ok || tenantAStandard.ID != "sub-a" {
+		t.Fatalf("tenant-a/standard must keep its own state: %+v ok=%t", tenantAStandard, ok)
+	}
+	tenantBStandard, ok := store.Find(context.Background(), "tenant-b/standard")
+	if !ok || tenantBStandard.ID != "sub-b" {
+		t.Fatalf("tenant-b/standard must keep its own state: %+v ok=%t", tenantBStandard, ok)
+	}
+	tenantAPremium, ok := store.Find(context.Background(), "tenant-a/premium")
+	if !ok || tenantAPremium.ID != "sub-c" {
+		t.Fatalf("tenant-a/premium must keep its own state: %+v ok=%t", tenantAPremium, ok)
+	}
+	if got := store.ReceiptCountForTest(); got != 3 {
+		t.Fatalf("isolated confirmations must each enqueue their own receipt, got %d", got)
+	}
+}
