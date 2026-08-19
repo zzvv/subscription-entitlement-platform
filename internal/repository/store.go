@@ -7,11 +7,18 @@ import (
 )
 
 type Store struct {
-	mu     sync.RWMutex
-	values map[string]domain.Entity
+	mu               sync.RWMutex
+	values           map[string]domain.Entity
+	receipts         map[string]domain.Receipt
+	receiptCommitErr error
 }
 
-func NewStore() *Store { return &Store{values: map[string]domain.Entity{}} }
+func NewStore() *Store {
+	return &Store{
+		values:   map[string]domain.Entity{},
+		receipts: map[string]domain.Receipt{},
+	}
+}
 func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, false
