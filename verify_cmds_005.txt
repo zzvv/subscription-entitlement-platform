@@ -1,0 +1,1 @@
+GOTOOLCHAIN=local GOCACHE=/go-cache go test ./internal/application -run '^TestTransientReceiptFailureDoesNotPoisonNextConfirmation$' -count=20

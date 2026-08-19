@@ -24,9 +24,7 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 		return err
 	}
 	if s.receiptCommitErr != nil {
-		err := s.receiptCommitErr
-		s.receiptCommitErr = nil
-		return err
+		return s.receiptCommitErr
 	}
 	s.values[key] = value
 	s.receipts[receipt.ID] = receipt
