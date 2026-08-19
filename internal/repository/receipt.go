@@ -18,6 +18,9 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if s.commitBeforeLock != nil {
+		s.commitBeforeLock()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -27,6 +30,9 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 		err := s.receiptCommitErr
 		s.receiptCommitErr = nil
 		return err
+	}
+	if _, exists := s.values[key]; exists {
+		return nil
 	}
 	s.values[key] = value
 	s.receipts[receipt.ID] = receipt

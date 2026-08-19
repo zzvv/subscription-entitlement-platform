@@ -12,6 +12,7 @@ type Store struct {
 	receipts              map[string]domain.Receipt
 	receiptCommitErr      error
 	loadOrStoreBeforeLock func()
+	commitBeforeLock      func()
 }
 
 func NewStore() *Store {
@@ -42,6 +43,17 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 // SetLoadOrStoreBeforeLockForTest pauses LoadOrStore after its initial context check.
 func (s *Store) SetLoadOrStoreBeforeLockForTest(hook func()) {
 	s.loadOrStoreBeforeLock = hook
+}
+
+// SetCommitBeforeLockForTest pauses CommitWithReceipt before it acquires the store lock.
+func (s *Store) SetCommitBeforeLockForTest(hook func()) {
+	s.commitBeforeLock = hook
+}
+
+func (s *Store) ReceiptCountForTest() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.receipts)
 }
 
 // LoadOrStore atomically returns the existing value or stores value when key is absent.
