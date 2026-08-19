@@ -1,0 +1,46 @@
+package application
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/subscription-entitlement-platform/internal/domain"
+	"example.com/subscription-entitlement-platform/internal/repository"
+)
+
+func TestConfirmCommitsSubscriptionAndReceiptTogether(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+
+	entity, err := service.Confirm(context.Background(), domain.NewCommand("sub-a", "tenant-a", "standard", "activate"))
+	if err != nil {
+		t.Fatalf("confirm subscription: %v", err)
+	}
+	if entity.ID != "sub-a" {
+		t.Fatalf("unexpected subscription: %+v", entity)
+	}
+	if _, ok := store.Find(context.Background(), "tenant-a/standard"); !ok {
+		t.Fatal("confirmed subscription state was not committed")
+	}
+	if receipt, ok := store.FindReceipt(context.Background(), "sub-a/activate"); !ok || receipt.Status != "pending" {
+		t.Fatalf("notification receipt was not committed: %+v, found=%t", receipt, ok)
+	}
+}
+
+func TestConfirmLeavesNoPartialStateWhenReceiptCommitFails(t *testing.T) {
+	store := repository.NewStore()
+	store.SetReceiptCommitErrorForTest(errors.New("notification outbox unavailable"))
+	service := NewReceiptService(store)
+
+	_, err := service.Confirm(context.Background(), domain.NewCommand("sub-a", "tenant-a", "standard", "activate"))
+	if err == nil {
+		t.Fatal("expected receipt commit failure")
+	}
+	if _, ok := store.Find(context.Background(), "tenant-a/standard"); ok {
+		t.Fatal("failed confirmation must not leave subscription state")
+	}
+	if _, ok := store.FindReceipt(context.Background(), "sub-a/activate"); ok {
+		t.Fatal("failed confirmation must not leave notification receipt")
+	}
+}
