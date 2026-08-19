@@ -44,3 +44,20 @@ func TestConfirmLeavesNoPartialStateWhenReceiptCommitFails(t *testing.T) {
 		t.Fatal("failed confirmation must not leave notification receipt")
 	}
 }
+
+func TestTransientReceiptFailureDoesNotPoisonNextConfirmation(t *testing.T) {
+	store := repository.NewStore()
+	store.SetReceiptCommitErrorForTest(errors.New("temporary receipt outage"))
+	service := NewReceiptService(store)
+	command := domain.NewCommand("sub-a", "tenant-a", "standard", "activate")
+
+	if _, err := service.Confirm(context.Background(), command); err == nil {
+		t.Fatal("expected first confirmation to fail")
+	}
+	if _, err := service.Confirm(context.Background(), command); err != nil {
+		t.Fatalf("retry should succeed after transient receipt failure: %v", err)
+	}
+	if _, ok := store.Find(context.Background(), "tenant-a/standard"); !ok {
+		t.Fatal("successful retry must persist subscription state")
+	}
+}
