@@ -54,9 +54,6 @@ func (s *Store) LoadOrStore(ctx context.Context, key string, value domain.Entity
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return domain.Entity{}, false, err
-	}
 	if existing, ok := s.values[key]; ok {
 		return existing, true, nil
 	}
