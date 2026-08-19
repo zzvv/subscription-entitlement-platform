@@ -7,10 +7,11 @@ import (
 )
 
 type Store struct {
-	mu               sync.RWMutex
-	values           map[string]domain.Entity
-	receipts         map[string]domain.Receipt
-	receiptCommitErr error
+	mu                    sync.RWMutex
+	values                map[string]domain.Entity
+	receipts              map[string]domain.Receipt
+	receiptCommitErr      error
+	loadOrStoreBeforeLock func()
 }
 
 func NewStore() *Store {
@@ -38,13 +39,24 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 	return nil
 }
 
+// SetLoadOrStoreBeforeLockForTest pauses LoadOrStore after its initial context check.
+func (s *Store) SetLoadOrStoreBeforeLockForTest(hook func()) {
+	s.loadOrStoreBeforeLock = hook
+}
+
 // LoadOrStore atomically returns the existing value or stores value when key is absent.
 func (s *Store) LoadOrStore(ctx context.Context, key string, value domain.Entity) (domain.Entity, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, false, err
 	}
+	if s.loadOrStoreBeforeLock != nil {
+		s.loadOrStoreBeforeLock()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false, err
+	}
 	if existing, ok := s.values[key]; ok {
 		return existing, true, nil
 	}

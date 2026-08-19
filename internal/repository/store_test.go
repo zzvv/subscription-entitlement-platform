@@ -45,3 +45,30 @@ func TestStoreLoadOrStoreIsAtomic(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadOrStoreDoesNotPersistWhenContextCancelsWhileWaitingForLock(t *testing.T) {
+	store := NewStore()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.SetLoadOrStoreBeforeLockForTest(func() {
+		close(entered)
+		<-release
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := store.LoadOrStore(ctx, "tenant-a/standard", domain.Entity{ID: "sub-a"})
+		result <- err
+	}()
+
+	<-entered
+	cancel()
+	close(release)
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled load or store, got %v", err)
+	}
+	if _, ok := store.Find(context.Background(), "tenant-a/standard"); ok {
+		t.Fatal("canceled request must not leave subscription state")
+	}
+}
