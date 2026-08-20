@@ -32,11 +32,18 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 		}
 		return domain.Entity{}, ErrSubscriptionNotFound
 	}
-	current.Plan = plan
-	if err := s.store.Save(ctx, key, current); err != nil {
+	// Invalidate the cached detail projection before persisting the new plan.
+	// Order matters: if invalidation fails, neither the subscription state nor
+	// the stale detail must be touched, so callers never observe a half-applied
+	// amendment (new plan in the store but old entitlements still cached). When
+	// invalidation succeeds and the subsequent Save fails, the next detail query
+	// simply re-reads and re-caches the unchanged old state, keeping the two
+	// consistent. Only a fully successful invalidate+save exposes new entitlements.
+	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
 		return domain.Entity{}, err
 	}
-	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
+	current.Plan = plan
+	if err := s.store.Save(ctx, key, current); err != nil {
 		return domain.Entity{}, err
 	}
 	return current, nil

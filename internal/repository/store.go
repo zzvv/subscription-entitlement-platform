@@ -11,6 +11,7 @@ type Store struct {
 	values                map[string]domain.Entity
 	receipts              map[string]domain.Receipt
 	receiptCommitErr      error
+	saveErr               error
 	loadOrStoreBeforeLock func()
 	commitBeforeLock      func()
 }
@@ -36,8 +37,23 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.saveErr != nil {
+		err := s.saveErr
+		s.saveErr = nil
+		return err
+	}
 	s.values[key] = value
 	return nil
+}
+
+// SetSaveErrorForTest makes the next Save fail before it mutates the store.
+func (s *Store) SetSaveErrorForTest(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.saveErr = err
 }
 
 // SetLoadOrStoreBeforeLockForTest pauses LoadOrStore after its initial context check.
