@@ -10,8 +10,16 @@ import (
 // ProjectionCache keeps material-detail projections close to the query path.
 // Entries are scoped by the same tenant and subscription scope used by Store.
 type ProjectionCache struct {
-	mu     sync.RWMutex
-	values map[string]domain.Entity
+	mu        sync.RWMutex
+	values    map[string]domain.Entity
+	deleteErr error
+}
+
+// SetDeleteErrorForTest makes the next cache invalidation fail.
+func (c *ProjectionCache) SetDeleteErrorForTest(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deleteErr = err
 }
 
 func NewProjectionCache() *ProjectionCache {
@@ -49,6 +57,11 @@ func (c *ProjectionCache) Delete(ctx context.Context, tenant, scope string) erro
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.deleteErr != nil {
+		err := c.deleteErr
+		c.deleteErr = nil
 		return err
 	}
 	delete(c.values, tenant+"/"+scope)
