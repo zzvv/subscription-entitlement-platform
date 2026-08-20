@@ -40,3 +40,17 @@ func (c *ProjectionCache) Put(ctx context.Context, tenant, scope string, value d
 	c.values[tenant+"/"+scope] = value
 	return nil
 }
+
+// Delete removes the material-detail projection after its subscription state changes.
+func (c *ProjectionCache) Delete(ctx context.Context, tenant, scope string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	delete(c.values, tenant+"/"+scope)
+	return nil
+}
