@@ -36,5 +36,8 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 	if err := s.store.Save(ctx, key, current); err != nil {
 		return domain.Entity{}, err
 	}
+	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
+		return domain.Entity{}, err
+	}
 	return current, nil
 }
