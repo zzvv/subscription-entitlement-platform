@@ -5,5 +5,5 @@
 复现与回归命令：
 
 ```bash
-GOTOOLCHAIN=local GOCACHE=/go-cache go test ./internal/application -run '^TestPlanChangeLeavesStateAndCacheUntouchedWhenInvalidationFails$' -count=20
+GOTOOLCHAIN=local go test ./internal/application -run '^TestPlanChangeLeavesStateAndCacheUntouchedWhenInvalidationFails$' -count=20
 ```
