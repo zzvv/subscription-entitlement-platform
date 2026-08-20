@@ -24,7 +24,7 @@ func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	value, ok := c.values[tenant+"/"+scope]
+	value, ok := c.values[scope]
 	return value, ok
 }
 
@@ -37,6 +37,6 @@ func (c *ProjectionCache) Put(ctx context.Context, tenant, scope string, value d
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.values[tenant+"/"+scope] = value
+	c.values[scope] = value
 	return nil
 }
