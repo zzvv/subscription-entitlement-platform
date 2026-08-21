@@ -6,7 +6,3 @@
 
     go run ./cmd/api
     curl http://localhost:8080/healthz
-
-## 分支
-
-`main` 为无 Bug 项目。每道题从 `main` 独立建立 `bug_NNN_main`、`gold_bug_NNN_fix` 和 `test_bug_NNN_fix`。
