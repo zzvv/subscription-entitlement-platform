@@ -34,8 +34,16 @@ func (s *EntitlementQueryService) Detail(ctx context.Context, tenant, scope stri
 		}
 		return domain.Entity{}, ErrEntitlementNotFound
 	}
+	// The projection cache is only an acceleration layer: a transient write
+	// failure must not hide a subscription that was just read from durable
+	// storage, so the loaded value is returned regardless. A request that is
+	// cancelled during this window is different — its cancellation must be
+	// surfaced rather than swallowed, since the caller's request is no longer
+	// valid.
 	if err := s.cache.Put(ctx, tenant, scope, value); err != nil {
-		return domain.Entity{}, err
+		if ctx.Err() != nil {
+			return domain.Entity{}, err
+		}
 	}
 	return value, nil
 }

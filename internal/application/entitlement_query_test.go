@@ -53,6 +53,17 @@ func TestEntitlementDetailSurvivesCacheWriteFailure(t *testing.T) {
 	if got != entity {
 		t.Fatalf("detail returned wrong subscription: got=%+v want=%+v", got, entity)
 	}
+	// A degraded cache write must leave nothing cached, so a subsequent read
+	// still resolves from durable storage rather than a stale half-written
+	// entry.
+	cache.SetPutErrorForTest(nil)
+	if cached, ok := cache.Get(ctx, "tenant-a", "standard"); ok {
+		t.Fatalf("cache should remain empty after a degraded write, got=%+v", cached)
+	}
+	again, err := service.Detail(ctx, "tenant-a", "standard")
+	if err != nil || again != entity {
+		t.Fatalf("subsequent read after cache degradation: got=%+v err=%v", again, err)
+	}
 }
 
 func TestEntitlementDetailPropagatesCancellationDuringCacheWrite(t *testing.T) {
