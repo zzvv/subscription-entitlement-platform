@@ -43,3 +43,43 @@ func TestProcessMapsCanceledRequestToClientClosedRequest(t *testing.T) {
 		t.Fatalf("canceled request must be reported as client closed request (499), got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+// TestProcessMapsMidFlightCancelToClientClosedRequest reproduces a cancel that arrives
+// after the request has been accepted and while LoadOrStore is waiting for the store lock.
+// This exercises the second ctx.Err() check inside LoadOrStore and must surface as 499,
+// not as a 422 business error, so callers can tell a client cancellation apart from an
+// invalid command.
+func TestProcessMapsMidFlightCancelToClientClosedRequest(t *testing.T) {
+	store := repository.NewStore()
+	handler := New(application.NewService(store))
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.SetLoadOrStoreBeforeLockForTest(func() {
+		close(entered)
+		<-release
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/subscriptions/commands",
+		bytes.NewBufferString(`{"id":"sub-a","tenant":"tenant-a","scope":"standard","action":"activate"}`),
+	).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		handler.Process(recorder, request)
+		close(done)
+	}()
+
+	<-entered
+	cancel()
+	close(release)
+	<-done
+
+	if recorder.Code != 499 {
+		t.Fatalf("mid-flight canceled request must be reported as client closed request (499), got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
