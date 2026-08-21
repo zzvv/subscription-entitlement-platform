@@ -9,6 +9,7 @@ import (
 type Store struct {
 	mu                    sync.RWMutex
 	values                map[string]domain.Entity
+	versions              map[string]uint64
 	receipts              map[string]domain.Receipt
 	receiptCommitErr      error
 	loadOrStoreBeforeLock func()
@@ -18,6 +19,7 @@ type Store struct {
 func NewStore() *Store {
 	return &Store{
 		values:   map[string]domain.Entity{},
+		versions: map[string]uint64{},
 		receipts: map[string]domain.Receipt{},
 	}
 }
@@ -30,6 +32,23 @@ func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
 	value, ok := s.values[key]
 	return value, ok
 }
+
+// FindWithVersion returns the value together with the store version it was read
+// at. The version is captured under the store lock, so a caller can use it to
+// detect that a concurrent Save committed a newer state after this read.
+func (s *Store) FindWithVersion(ctx context.Context, key string) (domain.Entity, uint64, bool) {
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, 0, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.values[key]
+	if !ok {
+		return domain.Entity{}, 0, false
+	}
+	return value, s.versions[key], true
+}
+
 func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -37,6 +56,7 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.values[key] = value
+	s.versions[key] = s.versions[key] + 1
 	return nil
 }
 
@@ -73,5 +93,6 @@ func (s *Store) LoadOrStore(ctx context.Context, key string, value domain.Entity
 		return existing, true, nil
 	}
 	s.values[key] = value
+	s.versions[key] = 1
 	return value, false, nil
 }

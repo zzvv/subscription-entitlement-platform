@@ -20,6 +20,11 @@ func NewPlanChangeService(store *repository.Store, cache *repository.ProjectionC
 	return &PlanChangeService{store: store, cache: cache}
 }
 
+// Change amends the subscription plan. It invalidates the cached detail before
+// persisting so a cache-backend failure leaves both store and cache untouched,
+// then advances the cache's version high-water mark to the committed version. The
+// high-water mark makes any in-flight Detail that read the old plan drop its stale
+// write-back, and evicts a stale entry that slipped back in between the two steps.
 func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan string) (domain.Entity, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, err
@@ -37,6 +42,10 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 	}
 	current.Plan = plan
 	if err := s.store.Save(ctx, key, current); err != nil {
+		return domain.Entity{}, err
+	}
+	_, committedVersion, _ := s.store.FindWithVersion(ctx, key)
+	if err := s.cache.AdvanceVersion(ctx, tenant, scope, committedVersion); err != nil {
 		return domain.Entity{}, err
 	}
 	return current, nil
