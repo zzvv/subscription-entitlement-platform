@@ -1,7 +1,9 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"example.com/subscription-entitlement-platform/internal/application"
 	"example.com/subscription-entitlement-platform/internal/domain"
 	"io"
@@ -33,6 +35,10 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := h.service.Process(r.Context(), command)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			http.Error(w, err.Error(), 499)
+			return
+		}
 		http.Error(w, err.Error(), 422)
 		return
 	}
