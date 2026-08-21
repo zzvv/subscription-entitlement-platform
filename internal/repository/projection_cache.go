@@ -10,10 +10,11 @@ import (
 // ProjectionCache keeps material-detail projections close to the query path.
 // Entries are scoped by the same tenant and subscription scope used by Store.
 type ProjectionCache struct {
-	mu        sync.RWMutex
-	values    map[string]domain.Entity
-	deleteErr error
-	putErr    error
+	mu            sync.RWMutex
+	values        map[string]domain.Entity
+	deleteErr     error
+	putErr        error
+	putBeforeLock func()
 }
 
 // SetDeleteErrorForTest makes the next cache invalidation fail.
@@ -34,6 +35,11 @@ func (c *ProjectionCache) SetPutErrorForTest(err error) {
 	c.putErr = err
 }
 
+// SetPutBeforeLockForTest pauses Put after its initial context check.
+func (c *ProjectionCache) SetPutBeforeLockForTest(hook func()) {
+	c.putBeforeLock = hook
+}
+
 func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain.Entity, bool) {
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, false
@@ -47,6 +53,9 @@ func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain
 func (c *ProjectionCache) Put(ctx context.Context, tenant, scope string, value domain.Entity) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if c.putBeforeLock != nil {
+		c.putBeforeLock()
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
