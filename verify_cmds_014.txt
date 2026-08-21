@@ -1,0 +1,1 @@
+GOTOOLCHAIN=local go test ./internal/application -run '^TestConfirmKeepsReceiptsIsolatedWhenTenantsReuseSubscriptionID$' -count=20
