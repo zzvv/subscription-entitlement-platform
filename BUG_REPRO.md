@@ -1,3 +1,5 @@
 # 公开复现
 
-BUG BASE 执行：`GOTOOLCHAIN=local GOCACHE=/tmp/subscription-entitlement-gocache go test ./internal/application -run '^TestEntitlementsAreIsolatedBySubscription$' -count=20`。修复前稳定失败，修复后稳定通过。
+取消的详情请求在等待 Store 读锁期间释放锁后，不能再返回订阅实体。BUG BASE 中该请求会错误地返回成功，导致上层把已取消请求当作有效详情响应。
+
+回归命令见 `verify_cmds_016.txt`，修复前稳定失败，修复后稳定通过。

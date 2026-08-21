@@ -21,6 +21,35 @@ func TestStoreRejectsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestFindDoesNotReturnAfterContextCancelsWhileWaitingForLock(t *testing.T) {
+	store := NewStore()
+	if err := store.Save(context.Background(), "tenant-a/standard", domain.Entity{ID: "sub-a"}); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.SetFindBeforeLockForTest(func() {
+		close(entered)
+		<-release
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan bool, 1)
+	go func() {
+		_, ok := store.Find(ctx, "tenant-a/standard")
+		result <- ok
+	}()
+
+	<-entered
+	store.mu.Lock()
+	cancel()
+	close(release)
+	store.mu.Unlock()
+	if <-result {
+		t.Fatal("canceled lookup must not return a subscription after waiting for the lock")
+	}
+}
+
 func TestStoreLoadOrStoreIsAtomic(t *testing.T) {
 	store := NewStore()
 	const workers = 32

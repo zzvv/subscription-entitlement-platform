@@ -11,6 +11,7 @@ type Store struct {
 	values                map[string]domain.Entity
 	receipts              map[string]domain.Receipt
 	receiptCommitErr      error
+	findBeforeLock        func()
 	loadOrStoreBeforeLock func()
 	commitBeforeLock      func()
 }
@@ -24,6 +25,9 @@ func NewStore() *Store {
 func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, false
+	}
+	if s.findBeforeLock != nil {
+		s.findBeforeLock()
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -43,6 +47,11 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 // SetLoadOrStoreBeforeLockForTest pauses LoadOrStore after its initial context check.
 func (s *Store) SetLoadOrStoreBeforeLockForTest(hook func()) {
 	s.loadOrStoreBeforeLock = hook
+}
+
+// SetFindBeforeLockForTest pauses Find after its initial context check.
+func (s *Store) SetFindBeforeLockForTest(hook func()) {
+	s.findBeforeLock = hook
 }
 
 // SetCommitBeforeLockForTest pauses CommitWithReceipt before it acquires the store lock.
