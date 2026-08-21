@@ -31,6 +31,9 @@ func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false
+	}
 	value, ok := s.values[key]
 	return value, ok
 }
