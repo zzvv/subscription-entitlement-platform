@@ -54,3 +54,21 @@ func TestEntitlementDetailSurvivesCacheWriteFailure(t *testing.T) {
 		t.Fatalf("detail returned wrong subscription: got=%+v want=%+v", got, entity)
 	}
 }
+
+func TestEntitlementDetailPropagatesCancellationDuringCacheWrite(t *testing.T) {
+	store := repository.NewStore()
+	cache := repository.NewProjectionCache()
+	service := NewEntitlementQueryService(store, cache)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := store.Save(context.Background(), "tenant-a/standard", domain.NewEntity("sub-a", "tenant-a", "standard")); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+	cache.SetPutBeforeLockForTest(cancel)
+
+	_, err := service.Detail(ctx, "tenant-a", "standard")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("detail read must propagate cancellation during cache write, got %v", err)
+	}
+}
