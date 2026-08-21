@@ -1,0 +1,1 @@
+GOTOOLCHAIN=local go test ./internal/application -run '^TestRepeatedConfirmationReturnsPersistedSubscription$' -count=20
