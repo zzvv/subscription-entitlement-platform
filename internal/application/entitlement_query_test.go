@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"example.com/subscription-entitlement-platform/internal/domain"
@@ -30,5 +31,26 @@ func TestEntitlementDetailKeepsCachedProjectionScopedToTenant(t *testing.T) {
 	}
 	if first.ID == second.ID || second.Tenant != "tenant-b" || second.ID != "sub-b" {
 		t.Fatalf("tenant-b received a cached projection from tenant-a: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestEntitlementDetailSurvivesCacheWriteFailure(t *testing.T) {
+	store := repository.NewStore()
+	cache := repository.NewProjectionCache()
+	service := NewEntitlementQueryService(store, cache)
+	ctx := context.Background()
+
+	entity := domain.NewEntity("sub-a", "tenant-a", "standard")
+	if err := store.Save(ctx, "tenant-a/standard", entity); err != nil {
+		t.Fatalf("seed subscription: %v", err)
+	}
+	cache.SetPutErrorForTest(errors.New("cache backend unavailable"))
+
+	got, err := service.Detail(ctx, "tenant-a", "standard")
+	if err != nil {
+		t.Fatalf("detail read should survive cache write failure: %v", err)
+	}
+	if got != entity {
+		t.Fatalf("detail returned wrong subscription: got=%+v want=%+v", got, entity)
 	}
 }

@@ -1,3 +1,3 @@
 # 公开复现
 
-BUG BASE 执行：`GOTOOLCHAIN=local GOCACHE=/tmp/subscription-entitlement-gocache go test ./internal/application -run '^TestEntitlementsAreIsolatedBySubscription$' -count=20`。修复前稳定失败，修复后稳定通过。
+详情查询从仓储读到有效订阅后，如果投影缓存暂时不可写，当前版本会把缓存层故障直接返回给调用方，导致本来可读的订阅详情失败。执行目标测试可复现该现象；修复后应连续通过。

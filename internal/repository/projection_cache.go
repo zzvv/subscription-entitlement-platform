@@ -13,6 +13,7 @@ type ProjectionCache struct {
 	mu        sync.RWMutex
 	values    map[string]domain.Entity
 	deleteErr error
+	putErr    error
 }
 
 // SetDeleteErrorForTest makes the next cache invalidation fail.
@@ -24,6 +25,13 @@ func (c *ProjectionCache) SetDeleteErrorForTest(err error) {
 
 func NewProjectionCache() *ProjectionCache {
 	return &ProjectionCache{values: make(map[string]domain.Entity)}
+}
+
+// SetPutErrorForTest makes the next cache write fail in the in-memory adapter.
+func (c *ProjectionCache) SetPutErrorForTest(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.putErr = err
 }
 
 func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain.Entity, bool) {
@@ -43,6 +51,11 @@ func (c *ProjectionCache) Put(ctx context.Context, tenant, scope string, value d
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.putErr != nil {
+		err := c.putErr
+		c.putErr = nil
 		return err
 	}
 	c.values[tenant+"/"+scope] = value
