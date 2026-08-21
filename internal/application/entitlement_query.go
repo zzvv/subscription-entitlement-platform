@@ -34,8 +34,13 @@ func (s *EntitlementQueryService) Detail(ctx context.Context, tenant, scope stri
 		}
 		return domain.Entity{}, ErrEntitlementNotFound
 	}
+	// The cache is an optimization for a successful store read. A transient
+	// cache outage must not turn an available subscription into a failed read,
+	// but request cancellation still belongs to the caller's lifecycle.
 	if err := s.cache.Put(ctx, tenant, scope, value); err != nil {
-		return domain.Entity{}, err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return domain.Entity{}, ctxErr
+		}
 	}
 	return value, nil
 }
