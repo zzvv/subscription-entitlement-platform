@@ -36,5 +36,11 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 	if err := s.store.Save(ctx, key, current); err != nil {
 		return domain.Entity{}, err
 	}
+	// Save 持久化新权益后再失效详情投影：确保下一次查询命中不到旧缓存，
+	// 只能回 store 取到刚写入的新权益并重新回填。Delete 失败则视为变更未完成，
+	// 不向上游报告成功，避免审核期间读到旧权益。
+	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
+		return domain.Entity{}, err
+	}
 	return current, nil
 }
