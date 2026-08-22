@@ -6,7 +6,9 @@ import (
 	"example.com/subscription-entitlement-platform/internal/domain"
 )
 
-// SetReceiptCommitErrorForTest makes the next receipt commit fail in the in-memory adapter.
+// SetReceiptCommitErrorForTest makes the next receipt commit fail in the in-memory adapter,
+// modelling a transient notification outage. The fault clears after it trips so a retry
+// can succeed once the outage has passed.
 func (s *Store) SetReceiptCommitErrorForTest(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -24,7 +26,12 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 		return err
 	}
 	if s.receiptCommitErr != nil {
-		return s.receiptCommitErr
+		// The fault hook models a transient notification outage: it must fail at most
+		// the next commit and then recover, otherwise a single blip poisons every
+		// retry on the same subscription and the confirmation can never complete.
+		err := s.receiptCommitErr
+		s.receiptCommitErr = nil
+		return err
 	}
 	s.values[key] = value
 	s.receipts[receipt.ID] = receipt
