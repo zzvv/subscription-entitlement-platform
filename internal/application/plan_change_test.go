@@ -68,3 +68,29 @@ func TestPlanChangeLeavesStateAndCacheUntouchedWhenInvalidationFails(t *testing.
 		t.Fatalf("failed change must keep the original cached detail: %+v found=%t", cached, ok)
 	}
 }
+
+func TestPlanChangeLeavesCachedDetailWhenPersistenceFails(t *testing.T) {
+	store := repository.NewStore()
+	cache := repository.NewProjectionCache()
+	changes := NewPlanChangeService(store, cache)
+	ctx := context.Background()
+	old := domain.NewEntity("sub-a", "tenant-a", "standard")
+	if err := store.Save(ctx, "tenant-a/standard", old); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	if err := cache.Put(ctx, "tenant-a", "standard", old); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+	store.SetSaveErrorForTest(errors.New("subscription store unavailable"))
+	if _, err := changes.Change(ctx, "tenant-a", "standard", "premium"); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	stored, ok := store.Find(ctx, "tenant-a/standard")
+	if !ok || stored.Plan != "standard" {
+		t.Fatalf("failed change altered persisted state: %+v found=%t", stored, ok)
+	}
+	cached, ok := cache.Get(ctx, "tenant-a", "standard")
+	if !ok || cached.Plan != "standard" {
+		t.Fatalf("failed change discarded the old cached detail: %+v found=%t", cached, ok)
+	}
+}

@@ -11,8 +11,17 @@ type Store struct {
 	values                map[string]domain.Entity
 	receipts              map[string]domain.Receipt
 	receiptCommitErr      error
+	saveErr               error
 	loadOrStoreBeforeLock func()
 	commitBeforeLock      func()
+}
+
+// SetSaveErrorForTest makes the next Save fail, allowing persistence failure
+// paths to be exercised without replacing the store implementation.
+func (s *Store) SetSaveErrorForTest(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.saveErr = err
 }
 
 func NewStore() *Store {
@@ -36,6 +45,11 @@ func (s *Store) Save(ctx context.Context, key string, value domain.Entity) error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.saveErr != nil {
+		err := s.saveErr
+		s.saveErr = nil
+		return err
+	}
 	s.values[key] = value
 	return nil
 }
