@@ -10,6 +10,7 @@ type Store struct {
 	mu                    sync.RWMutex
 	values                map[string]domain.Entity
 	receipts              map[string]domain.Receipt
+	receiptsByKey         map[string]struct{}
 	receiptCommitErr      error
 	loadOrStoreBeforeLock func()
 	commitBeforeLock      func()
@@ -17,8 +18,9 @@ type Store struct {
 
 func NewStore() *Store {
 	return &Store{
-		values:   map[string]domain.Entity{},
-		receipts: map[string]domain.Receipt{},
+		values:        map[string]domain.Entity{},
+		receipts:      map[string]domain.Receipt{},
+		receiptsByKey: map[string]struct{}{},
 	}
 }
 func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {

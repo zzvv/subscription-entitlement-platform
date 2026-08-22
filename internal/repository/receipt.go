@@ -14,6 +14,10 @@ func (s *Store) SetReceiptCommitErrorForTest(err error) {
 }
 
 // CommitWithReceipt makes a subscription state change and its notification receipt visible together.
+// It keeps the existing per-tenant-and-scope idempotency: a subscription that is already saved is
+// never overwritten, and a request that does not actually persist state must not produce an extra
+// receipt. Each subscription maps to at most one notification receipt, even under concurrent
+// confirmations carrying different command identifiers.
 func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.Entity, receipt domain.Receipt) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -31,14 +35,17 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 		s.receiptCommitErr = nil
 		return err
 	}
-	if _, exists := s.values[key]; exists {
-		return nil
+	if _, exists := s.values[key]; !exists {
+		s.values[key] = value
 	}
-	s.values[key] = value
-	s.receipts[receipt.ID] = receipt
+	if _, exists := s.receiptsByKey[key]; !exists {
+		s.receipts[receipt.ID] = receipt
+		s.receiptsByKey[key] = struct{}{}
+	}
 	return nil
 }
 
+// FindReceipt looks up a notification receipt by its identifier.
 func (s *Store) FindReceipt(ctx context.Context, receiptID string) (domain.Receipt, bool) {
 	if err := ctx.Err(); err != nil {
 		return domain.Receipt{}, false

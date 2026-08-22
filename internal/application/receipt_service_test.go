@@ -76,6 +76,25 @@ func TestTransientReceiptFailureDoesNotPoisonNextConfirmation(t *testing.T) {
 	}
 }
 
+func TestConfirmDoesNotDuplicateReceiptForAlreadyConfirmedSubscription(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+	command := domain.NewCommand("sub-a", "tenant-a", "standard", "activate")
+
+	if _, err := service.Confirm(context.Background(), command); err != nil {
+		t.Fatalf("first confirmation: %v", err)
+	}
+	if _, err := service.Confirm(context.Background(), command); err != nil {
+		t.Fatalf("second confirmation: %v", err)
+	}
+	if got := store.ReceiptCountForTest(); got != 1 {
+		t.Fatalf("duplicate confirmation must not create an extra receipt, got %d", got)
+	}
+	if got, ok := store.Find(context.Background(), "tenant-a/standard"); !ok || got.ID != "sub-a" {
+		t.Fatalf("subscription must be preserved unchanged: %+v found=%t", got, ok)
+	}
+}
+
 func TestConcurrentConfirmationsKeepOneSubscriptionStateAndReceipt(t *testing.T) {
 	store := repository.NewStore()
 	service := NewReceiptService(store)
