@@ -59,3 +59,47 @@ func TestProcessIsStableForConcurrentCommands(t *testing.T) {
 		}
 	}
 }
+
+// TestProcessDoesNotPersistCanceledConfirmation reproduces the operator-cancel
+// flow end to end: the confirmation is queued behind the repository lock and the
+// request is canceled before the lock frees. The confirmation must neither write
+// the subscription nor return it, yet a subsequent normal confirmation still works.
+func TestProcessDoesNotPersistCanceledConfirmation(t *testing.T) {
+	store := repository.NewStore()
+	service := NewService(store)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.SetLoadOrStoreBeforeLockForTest(func() {
+		close(entered)
+		<-release
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := service.Process(ctx, domain.NewCommand("sub-a", "tenant-a", "standard", "activate"))
+		result <- err
+	}()
+
+	<-entered
+	cancel()
+	close(release)
+
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled confirmation, got %v", err)
+	}
+	if got, ok := store.Find(context.Background(), "tenant-a/standard"); ok {
+		t.Fatalf("canceled confirmation must not persist the subscription, got %+v", got)
+	}
+
+	// A normal confirmation after the cancellation must still succeed and remain tenant-isolated.
+	store.SetLoadOrStoreBeforeLockForTest(nil)
+	stored, err := service.Process(context.Background(), domain.NewCommand("sub-a", "tenant-a", "standard", "activate"))
+	if err != nil {
+		t.Fatalf("process after cancel: %v", err)
+	}
+	if stored.ID != "sub-a" || stored.Tenant != "tenant-a" {
+		t.Fatalf("unexpected subscription persisted: %+v", stored)
+	}
+}

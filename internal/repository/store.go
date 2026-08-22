@@ -54,6 +54,12 @@ func (s *Store) LoadOrStore(ctx context.Context, key string, value domain.Entity
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The request may have been canceled while we were waiting for the lock.
+	// Re-check the context before touching the store so a canceled confirmation
+	// neither writes the subscription nor returns a value for it.
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false, err
+	}
 	if existing, ok := s.values[key]; ok {
 		return existing, true, nil
 	}
