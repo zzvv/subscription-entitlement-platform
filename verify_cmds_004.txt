@@ -1,1 +1,0 @@
-GOTOOLCHAIN=local GOCACHE=/go-cache go test ./internal/repository -run '^TestLoadOrStoreDoesNotPersistWhenContextCancelsWhileWaitingForLock$' -count=20
