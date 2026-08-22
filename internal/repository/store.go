@@ -31,6 +31,12 @@ func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	// The request may have been canceled while waiting for the read lock. A
+	// canceled detail query must not surface the subscription entity, so treat
+	// the value as absent once ownership of the lock is acquired.
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false
+	}
 	value, ok := s.values[key]
 	return value, ok
 }

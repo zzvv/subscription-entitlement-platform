@@ -10,9 +10,16 @@ import (
 // ProjectionCache keeps material-detail projections close to the query path.
 // Entries are scoped by the same tenant and subscription scope used by Store.
 type ProjectionCache struct {
-	mu        sync.RWMutex
-	values    map[string]domain.Entity
-	deleteErr error
+	mu            sync.RWMutex
+	values        map[string]domain.Entity
+	deleteErr     error
+	getBeforeLock func()
+}
+
+// SetGetBeforeLockForTest pauses Get after its initial context check, before
+// it acquires the read lock. Used to reproduce cancellation while waiting.
+func (c *ProjectionCache) SetGetBeforeLockForTest(hook func()) {
+	c.getBeforeLock = hook
 }
 
 // SetDeleteErrorForTest makes the next cache invalidation fail.
@@ -30,8 +37,16 @@ func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain
 	if err := ctx.Err(); err != nil {
 		return domain.Entity{}, false
 	}
+	if c.getBeforeLock != nil {
+		c.getBeforeLock()
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	// A detail query canceled while waiting for the cache read lock must not
+	// return a cached subscription projection, so treat it as a miss.
+	if err := ctx.Err(); err != nil {
+		return domain.Entity{}, false
+	}
 	value, ok := c.values[tenant+"/"+scope]
 	return value, ok
 }
