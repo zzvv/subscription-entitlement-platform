@@ -1,0 +1,1 @@
+const rows=[['tenant-a','standard','active'],['tenant-b','growth','pending']];document.querySelector('#rows').innerHTML=rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('');
