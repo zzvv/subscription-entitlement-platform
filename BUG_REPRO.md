@@ -1,3 +1,3 @@
 # 公开复现
 
-BUG BASE 执行：`GOTOOLCHAIN=local GOCACHE=/tmp/subscription-entitlement-gocache go test ./internal/application -run '^TestEntitlementsAreIsolatedBySubscription$' -count=20`。修复前稳定失败，修复后稳定通过。
+计划变更需要同时维护订阅状态和详情缓存。持久化写入失败时，原有订阅状态和原有详情都应保持可读，不能因为一次失败变更让缓存层丢失旧数据。
