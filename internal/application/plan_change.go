@@ -32,12 +32,23 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 		}
 		return domain.Entity{}, ErrSubscriptionNotFound
 	}
+	// Persist first so a failed write leaves both the stored state and the
+	// cached detail projection untouched. The cache only retires once the new
+	// state is durable; a failure there rolls the state back to keep them in
+	// step with the still-cached detail.
+	updated := current
+	updated.Plan = plan
+	if err := s.store.Save(ctx, key, updated); err != nil {
+		return domain.Entity{}, err
+	}
 	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
+		// The new state is durable but its detail cache could not be retired.
+		// Restore the prior state so readers still observe the original plan
+		// served from cache, instead of a newer plan the cache never knew about.
+		if rbErr := s.store.Save(ctx, key, current); rbErr != nil {
+			return domain.Entity{}, errors.Join(err, rbErr)
+		}
 		return domain.Entity{}, err
 	}
-	current.Plan = plan
-	if err := s.store.Save(ctx, key, current); err != nil {
-		return domain.Entity{}, err
-	}
-	return current, nil
+	return updated, nil
 }

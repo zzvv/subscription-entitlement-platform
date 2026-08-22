@@ -94,3 +94,47 @@ func TestPlanChangeLeavesCachedDetailWhenPersistenceFails(t *testing.T) {
 		t.Fatalf("failed change discarded the old cached detail: %+v found=%t", cached, ok)
 	}
 }
+
+// When persistence succeeds but the cache invalidation fails, the persisted
+// state must be rolled back so the still-cached detail and the stored state
+// keep advertising the original plan. Readers going through the query path
+// must observe the same old plan from either source.
+func TestPlanChangeRollsBackStateWhenCacheInvalidationFails(t *testing.T) {
+	store := repository.NewStore()
+	cache := repository.NewProjectionCache()
+	query := NewEntitlementQueryService(store, cache)
+	changes := NewPlanChangeService(store, cache)
+	ctx := context.Background()
+
+	old := domain.NewEntity("sub-a", "tenant-a", "standard")
+	if err := store.Save(ctx, "tenant-a/standard", old); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	if err := cache.Put(ctx, "tenant-a", "standard", old); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+
+	// Persistence will succeed; only cache retirement fails.
+	cache.SetDeleteErrorForTest(errors.New("cache backend unavailable"))
+	if _, err := changes.Change(ctx, "tenant-a", "standard", "premium"); err == nil {
+		t.Fatal("expected cache invalidation failure to surface")
+	}
+
+	stored, ok := store.Find(ctx, "tenant-a/standard")
+	if !ok || stored.Plan != "standard" {
+		t.Fatalf("rolled-back state must keep the original plan: %+v found=%t", stored, ok)
+	}
+	cached, ok := cache.Get(ctx, "tenant-a", "standard")
+	if !ok || cached.Plan != "standard" {
+		t.Fatalf("failed invalidation must leave the original cached detail: %+v found=%t", cached, ok)
+	}
+
+	// The query path must read the old plan regardless of which source serves it.
+	detail, err := query.Detail(ctx, "tenant-a", "standard")
+	if err != nil {
+		t.Fatalf("read detail after failed change: %v", err)
+	}
+	if detail.Plan != "standard" {
+		t.Fatalf("detail after failed change must stay on the original plan: %+v", detail)
+	}
+}
