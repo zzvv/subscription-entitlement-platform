@@ -32,11 +32,15 @@ func (s *PlanChangeService) Change(ctx context.Context, tenant, scope, plan stri
 		}
 		return domain.Entity{}, ErrSubscriptionNotFound
 	}
+	previous, hadPrevious := s.cache.Get(ctx, tenant, scope)
 	if err := s.cache.Delete(ctx, tenant, scope); err != nil {
 		return domain.Entity{}, err
 	}
 	current.Plan = plan
 	if err := s.store.Save(ctx, key, current); err != nil {
+		if hadPrevious {
+			_ = s.cache.Put(ctx, tenant, scope, previous)
+		}
 		return domain.Entity{}, err
 	}
 	return current, nil
