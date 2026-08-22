@@ -1,1 +1,0 @@
-GOTOOLCHAIN=local go test ./internal/application -run '^TestConfirmAddsReceiptWhenSubscriptionAlreadyExists$' -count=20
