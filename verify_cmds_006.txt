@@ -1,1 +1,0 @@
-GOTOOLCHAIN=local GOCACHE=/go-cache go test ./internal/application -run '^TestConcurrentConfirmationsKeepOneSubscriptionStateAndReceipt$' -count=20

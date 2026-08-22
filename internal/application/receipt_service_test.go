@@ -98,3 +98,112 @@ func TestConcurrentConfirmationsKeepOneSubscriptionStateAndReceipt(t *testing.T)
 		t.Fatalf("expected one notification receipt for one subscription, got %d", got)
 	}
 }
+
+// TestConcurrentConfirmationsAreIdempotentPerSubscription drives many workers
+// confirming the same tenant/scope with different command ids at once and
+// asserts that exactly one state and one notification survive, run after run,
+// without relying on the before-lock test hook. It is the stable regression
+// for the duplicate-notification / state-overwrite concurrency bug.
+func TestConcurrentConfirmationsAreIdempotentPerSubscription(t *testing.T) {
+	const workers = 64
+	const rounds = 50
+	for round := 0; round < rounds; round++ {
+		store := repository.NewStore()
+		service := NewReceiptService(store)
+
+		start := make(chan struct{})
+		errs := make(chan error, workers)
+		for i := 0; i < workers; i++ {
+			command := domain.NewCommand("sub-"+itoa(i), "tenant-a", "standard", "activate")
+			go func() {
+				<-start
+				_, err := service.Confirm(context.Background(), command)
+				errs <- err
+			}()
+		}
+		close(start)
+		for i := 0; i < workers; i++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("round %d: confirmation failed: %v", round, err)
+			}
+		}
+
+		entity, ok := store.Find(context.Background(), "tenant-a/standard")
+		if !ok {
+			t.Fatalf("round %d: concurrent confirmation must leave subscription state", round)
+		}
+		if entity.Tenant != "tenant-a" || entity.Scope != "standard" {
+			t.Fatalf("round %d: survivor state leaked across scope: %+v", round, entity)
+		}
+		if got := store.ReceiptCountForTest(); got != 1 {
+			t.Fatalf("round %d: expected one notification receipt, got %d", round, got)
+		}
+	}
+}
+
+// TestConcurrentConfirmationsKeepTenantsIsolated confirms that the idempotent
+// commit is scoped per tenant/scope, so concurrent confirmations in different
+// tenants never cross wires.
+func TestConcurrentConfirmationsKeepTenantsIsolated(t *testing.T) {
+	store := repository.NewStore()
+	service := NewReceiptService(store)
+
+	tenants := []string{"tenant-a", "tenant-b", "tenant-c"}
+	const perTenant = 24
+	start := make(chan struct{})
+	errs := make(chan error, len(tenants)*perTenant)
+	for _, tenant := range tenants {
+		for i := 0; i < perTenant; i++ {
+			tenant := tenant
+			go func() {
+				<-start
+				_, err := service.Confirm(context.Background(),
+					domain.NewCommand("sub-"+tenant+"-"+itoa(i), tenant, "standard", "activate"))
+				errs <- err
+			}()
+		}
+	}
+	close(start)
+	for i := 0; i < len(tenants)*perTenant; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("confirmation failed: %v", err)
+		}
+	}
+
+	for _, tenant := range tenants {
+		entity, ok := store.Find(context.Background(), tenant+"/standard")
+		if !ok {
+			t.Fatalf("tenant %s: expected committed subscription state", tenant)
+		}
+		if entity.Tenant != tenant {
+			t.Fatalf("tenant %s received another tenant's state: %+v", tenant, entity)
+		}
+	}
+	if got := store.ReceiptCountForTest(); got != len(tenants) {
+		t.Fatalf("expected one receipt per tenant (%d), got %d", len(tenants), got)
+	}
+}
+
+// itoa returns the decimal representation of n. It avoids pulling in strconv
+// only to keep the test file self-contained.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}

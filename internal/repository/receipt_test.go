@@ -14,7 +14,7 @@ func TestCommitWithReceiptDoesNotExposeStateWhenReceiptFails(t *testing.T) {
 	entity := domain.NewEntity("sub-a", "tenant-a", "standard")
 	receipt := domain.NewReceipt("sub-a/activate", "tenant-a", "sub-a", "activate")
 
-	if err := store.CommitWithReceipt(context.Background(), "tenant-a/standard", entity, receipt); err == nil {
+	if _, _, err := store.CommitWithReceipt(context.Background(), "tenant-a/standard", entity, receipt); err == nil {
 		t.Fatal("expected receipt commit failure")
 	}
 	if _, ok := store.Find(context.Background(), "tenant-a/standard"); ok {

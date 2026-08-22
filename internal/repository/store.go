@@ -10,6 +10,10 @@ type Store struct {
 	mu                    sync.RWMutex
 	values                map[string]domain.Entity
 	receipts              map[string]domain.Receipt
+	// receiptsByValue ties each committed subscription key to the single
+	// notification receipt that owns it, so a duplicate confirmation for the
+	// same tenant/scope reuses the existing receipt instead of appending one.
+	receiptsByValue       map[string]string
 	receiptCommitErr      error
 	loadOrStoreBeforeLock func()
 	commitBeforeLock      func()
@@ -17,8 +21,9 @@ type Store struct {
 
 func NewStore() *Store {
 	return &Store{
-		values:   map[string]domain.Entity{},
-		receipts: map[string]domain.Receipt{},
+		values:          map[string]domain.Entity{},
+		receipts:        map[string]domain.Receipt{},
+		receiptsByValue: map[string]string{},
 	}
 }
 func (s *Store) Find(ctx context.Context, key string) (domain.Entity, bool) {

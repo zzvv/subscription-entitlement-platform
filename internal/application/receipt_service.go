@@ -23,8 +23,9 @@ func (s *ReceiptService) Confirm(ctx context.Context, command domain.Command) (d
 	value := domain.NewEntity(command.ID, command.Tenant, command.Scope)
 	value.Plan = command.Plan
 	receipt := domain.NewReceipt(command.ID+"/activate", command.Tenant, command.ID, command.Action)
-	if err := s.store.CommitWithReceipt(ctx, key, value, receipt); err != nil {
+	committed, _, err := s.store.CommitWithReceipt(ctx, key, value, receipt)
+	if err != nil {
 		return domain.Entity{}, err
 	}
-	return value, nil
+	return committed, nil
 }

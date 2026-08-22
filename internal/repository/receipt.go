@@ -13,10 +13,16 @@ func (s *Store) SetReceiptCommitErrorForTest(err error) {
 	s.receiptCommitErr = err
 }
 
-// CommitWithReceipt makes a subscription state change and its notification receipt visible together.
-func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.Entity, receipt domain.Receipt) error {
+// CommitWithReceipt makes a subscription state change and its notification
+// receipt visible together. It is idempotent per subscription key: the first
+// confirmation for a tenant/scope commits the state and its single receipt,
+// while any later confirmation for the same key returns the committed state
+// and receipt unchanged instead of overwriting the state or appending a
+// duplicate notification. This keeps exactly one state and one receipt per
+// subscription even under concurrent confirmations.
+func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.Entity, receipt domain.Receipt) (domain.Entity, domain.Receipt, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return domain.Entity{}, domain.Receipt{}, err
 	}
 	if s.commitBeforeLock != nil {
 		s.commitBeforeLock()
@@ -24,16 +30,25 @@ func (s *Store) CommitWithReceipt(ctx context.Context, key string, value domain.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return err
+		return domain.Entity{}, domain.Receipt{}, err
+	}
+	// A receipt for this subscription already exists, so this is a duplicate
+	// confirmation. Reuse the committed state and receipt rather than writing
+	// a second notification or overwriting the survivor state.
+	if ownerID, ok := s.receiptsByValue[key]; ok {
+		if owner, ok := s.receipts[ownerID]; ok {
+			return s.values[key], owner, nil
+		}
 	}
 	if s.receiptCommitErr != nil {
 		err := s.receiptCommitErr
 		s.receiptCommitErr = nil
-		return err
+		return domain.Entity{}, domain.Receipt{}, err
 	}
 	s.values[key] = value
 	s.receipts[receipt.ID] = receipt
-	return nil
+	s.receiptsByValue[key] = receipt.ID
+	return value, receipt, nil
 }
 
 func (s *Store) FindReceipt(ctx context.Context, receiptID string) (domain.Receipt, bool) {
