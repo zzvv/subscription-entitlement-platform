@@ -24,7 +24,7 @@ func (c *ProjectionCache) Get(ctx context.Context, tenant, scope string) (domain
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	value, ok := c.values[scope]
+	value, ok := c.values[c.key(tenant, scope)]
 	return value, ok
 }
 
@@ -37,6 +37,13 @@ func (c *ProjectionCache) Put(ctx context.Context, tenant, scope string, value d
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.values[scope] = value
+	c.values[c.key(tenant, scope)] = value
 	return nil
+}
+
+// key namespaces cache entries by both tenant and subscription scope so that
+// projections belonging to different tenants never collide, even when they
+// share the same scope (e.g. both on a "standard" plan).
+func (c *ProjectionCache) key(tenant, scope string) string {
+	return tenant + "/" + scope
 }
